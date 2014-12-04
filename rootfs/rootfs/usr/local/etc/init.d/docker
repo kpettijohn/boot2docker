@@ -5,8 +5,8 @@
 #import settings from profile (e.g. HTTP_PROXY, HTTPS_PROXY)
 test -f '/var/lib/boot2docker/profile' && . '/var/lib/boot2docker/profile'
 
-: ${DOCKER_HOST:='-H tcp://0.0.0.0:2375'}
-: ${DOCKER_TLS:=auto}
+: ${DOCKER_HOST:='-H tcp://0.0.0.0:2376'}
+: ${DOCKER_TLS:=""}
 : ${DOCKER_STORAGE:=auto}
 : ${DOCKER_DIR:=/var/lib/docker}
 : ${DOCKER_ULIMITS:=1048576}
@@ -20,9 +20,11 @@ test -f '/var/lib/boot2docker/profile' && . '/var/lib/boot2docker/profile'
 : ${CERT:="${CERTDIR}cert.pem"}
 : ${KEY:="${CERTDIR}key.pem"}
 
+EXTRA_ARGS="$EXTRA_ARGS --auth=identity"
+
 start() {
     # Not enabling Docker daemon TLS by default.
-    if [ "$DOCKER_TLS" != "no" ]; then
+    if [ "$DOCKER_TLS" != "" ]; then
         CERTHOSTNAMES="$(hostname -s),$(hostname -i)"
         ETH0=$(ip addr show eth0 |sed -nEe 's/^[ \t]*inet[ \t]*([0-9.]+)\/.*$/\1/p')
         ETH1=$(ip addr show eth1 |sed -nEe 's/^[ \t]*inet[ \t]*([0-9.]+)\/.*$/\1/p')
@@ -59,7 +61,7 @@ start() {
         if [ "$DOCKER_TLS" == "auto" ]; then
             DOCKER_HOST='-H tcp://0.0.0.0:2376'
             EXTRA_ARGS="$EXTRA_ARGS --tlsverify --tlscacert=$CACERT --tlscert=$SERVERCERT --tlskey=$SERVERKEY"
-        elif [ "$DOCKER_TLS" != "no" ]; then
+        else
             EXTRA_ARGS="$EXTRA_ARGS $DOCKER_TLS --tlscacert=$CACERT --tlscert=$SERVERCERT --tlskey=$SERVERKEY"
         fi
 
