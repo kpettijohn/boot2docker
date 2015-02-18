@@ -62,7 +62,8 @@ ENV TCZ_DEPS        iptables \
                     xz liblzma \
                     git expat2 libiconv libidn libgpg-error libgcrypt libssh2 \
                     nfs-utils tcp_wrappers portmap rpcbind libtirpc \
-                    curl ntpclient
+                    curl ntpclient \
+                    procps glib2 libtirpc libffi fuse
 
 # Make the ROOTFS
 RUN mkdir -p $ROOTFS
@@ -149,6 +150,84 @@ RUN mkdir -p /vboxguest && \
     \
     mkdir -p $ROOTFS/sbin && \
     cp x86/lib/VBoxGuestAdditions/mount.vboxsf $ROOTFS/sbin/
+
+# Build VMware Tools
+ENV OVT_VERSION 9.4.6-1770165
+
+# Download and prepare ovt source
+RUN mkdir -p /vmtoolsd && \
+    cd /vmtoolsd && \
+    curl -L -o open-vm-tools-$OVT_VERSION.tar.gz http://downloads.sourceforge.net/open-vm-tools/open-vm-tools-$OVT_VERSION.tar.gz && \
+    tar xfz open-vm-tools-$OVT_VERSION.tar.gz && \
+    mv open-vm-tools-$OVT_VERSION open-vm-tools && \
+    rm open-vm-tools-$OVT_VERSION.tar.gz
+
+# Apply patches
+RUN cd /vmtoolsd && \
+    git clone https://github.com/frapposelli/open-vm-tools-dkms ovt-patches && \
+    curl -L -o ovt-patches/authposix_c.patch https://github.com/vmware/tcl-container/raw/master/patches/ovt/authposix_c.patch && \
+    curl -L -o ovt-patches/vmxrpc_h.patch https://github.com/vmware/tcl-container/raw/master/patches/ovt/vmxrpc_h.patch && \
+    for patch in authposix_c \
+                 vmxrpc_h; do \
+        cd /vmtoolsd/open-vm-tools; \ 
+        patch -p0 < /vmtoolsd/ovt-patches/$patch.patch; \
+        cd -; \
+    done && \
+    for patch in 0001-Remove-unused-DEPRECATED-macro \
+                 0002-Conditionally-define-g_info-macro \
+                 0003-Add-kuid_t-kgid_t-compatibility-layer \
+                 0004-Use-new-link-helpers \
+                 0005-Update-hgfs-file-operations-for-newer-kernels \
+                 0006-Fix-vmxnet-module-on-kernels-3.16 \
+                 0007-Fix-vmhgfs-module-on-kernels-3.16 \
+                 0008-Fix-segfault-in-vmhgfs; do \
+        patch -p1 < /vmtoolsd/ovt-patches/$patch.patch; \
+    done
+
+RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y libfuse2 libtool autoconf libglib2.0-dev libdumbnet-dev:i386 libdumbnet1:i386 libfuse2:i386 libfuse-dev libglib2.0-0:i386 libtirpc-dev libtirpc1:i386
+
+RUN ln -s /lib/i386-linux-gnu/libglib-2.0.so.0.3200.4 /lib/i386-linux-gnu/libglib-2.0.so &&\
+    ln -s /lib/i386-linux-gnu/libtirpc.so.1.0.10 /lib/i386-linux-gnu/libtirpc.so &&\
+    ln -s /usr/lib/i386-linux-gnu/libgthread-2.0.so.0 /usr/lib/i386-linux-gnu/libgthread-2.0.so &&\
+    ln -s /usr/lib/i386-linux-gnu/libgmodule-2.0.so.0 /usr/lib/i386-linux-gnu/libgmodule-2.0.so &&\
+    ln -s /usr/lib/i386-linux-gnu/libgobject-2.0.so.0 /usr/lib/i386-linux-gnu/libgobject-2.0.so &&\
+    ln -s /lib/i386-linux-gnu/libfuse.so.2 /lib/i386-linux-gnu/libfuse.so
+
+# Compile
+RUN cd /vmtoolsd/open-vm-tools && \
+    autoreconf -i && \
+    CC="gcc -m32" CXX="g++ -m32" ./configure --host=i486-pc-linux-gnu \
+                --build=i486-pc-linux-gnu \
+                --disable-multimon \
+                --disable-docs \
+                --disable-tests \
+                --with-linuxdir=/linux-kernel \
+                --with-gnu-ld \
+                --without-kernel-modules \
+                --without-procps \
+                --without-gtk2 \
+                --without-gtkmm \
+                --without-pam \
+                --without-x \
+                --without-icu && \
+    make CC="gcc -m32" CXX="g++ -m32" LIBS="-ltirpc" CFLAGS="-Wno-implicit-function-declaration" && \
+    make DESTDIR=$ROOTFS install &&\
+    libtool --finish /usr/local/lib
+
+ENV LIBDNET libdnet-1.11
+
+RUN cd /vmtoolsd &&\
+    curl -L -o ${LIBDNET}.tar.gz http://sourceforge.net/projects/libdnet/files/libdnet/${LIBDNET}/${LIBDNET}.tar.gz &&\
+    tar zxf ${LIBDNET}.tar.gz &&\
+    rm ${LIBDNET}.tar.gz &&\
+    cd ${LIBDNET} &&\
+    ./configure --build=i486-pc-linux-gnu &&\
+    make CC="gcc -m32" CXX="g++ -m32" &&\
+    make install &&\ 
+    make DESTDIR=$ROOTFS install &&\
+    libtool --finish /usr/local/lib
+
+RUN cd $ROOTFS && cd usr/local/lib && ln -s libdnet.1 libdumbnet.so.1
 
 # Make sure that all the modules we might have added are recognized (especially VBox guest additions)
 RUN depmod -a -b $ROOTFS $KERNEL_VERSION-tinycore64
