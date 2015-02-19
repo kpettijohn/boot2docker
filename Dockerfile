@@ -1,6 +1,7 @@
 FROM debian:wheezy
 MAINTAINER Steeve Morin "steeve.morin@gmail.com"
 
+#Change libc6-i386 by libc6. Future test might involve libc6-amd64
 RUN apt-get update && apt-get -y install  unzip \
                         xz-utils \
                         curl \
@@ -8,7 +9,7 @@ RUN apt-get update && apt-get -y install  unzip \
                         git \
                         build-essential \
                         cpio \
-                        gcc-multilib libc6-i386 libc6-dev-i386 \
+                        gcc-multilib libc6 libc6-dev \
                         kmod \
                         squashfs-tools \
                         genisoimage \
@@ -52,7 +53,7 @@ RUN jobs=$(nproc); \
 # The post kernel build process
 
 ENV ROOTFS          /rootfs
-ENV TCL_REPO_BASE   http://tinycorelinux.net/5.x/x86
+ENV TCL_REPO_BASE   http://tinycorelinux.net/6.x/x86_64
 ENV TCZ_DEPS        iptables \
                     iproute2 \
                     openssh openssl-1.0.0 \
@@ -62,8 +63,9 @@ ENV TCZ_DEPS        iptables \
                     xz liblzma \
                     git expat2 libiconv libidn libgpg-error libgcrypt libssh2 \
                     nfs-utils tcp_wrappers portmap rpcbind libtirpc \
-                    curl ntpclient \
-                    procps glib2 libtirpc libffi fuse
+                    curl \
+                    procps glib2 libtirpc libffi fuse pcre 
+                    # TODO: Missing ntpclient, must check for alternatives
 
 # Make the ROOTFS
 RUN mkdir -p $ROOTFS
@@ -107,7 +109,8 @@ RUN cd /linux-kernel && \
     git clone http://git.code.sf.net/p/aufs/aufs-util && \
     cd /aufs-util && \
     git checkout aufs3.9 && \
-    CPPFLAGS="-m32 -I/tmp/kheaders/include" CLFAGS=$CPPFLAGS LDFLAGS=$CPPFLAGS make && \
+    # CPPFLAGS="-m32 -I/tmp/kheaders/include" CLFAGS=$CPPFLAGS LDFLAGS=$CPPFLAGS make && \
+    CPPFLAGS="-I/tmp/kheaders/include" CLFAGS=$CPPFLAGS LDFLAGS=$CPPFLAGS make && \
     DESTDIR=$ROOTFS make install && \
     rm -rf /tmp/kheaders
 
@@ -115,7 +118,7 @@ RUN cd /linux-kernel && \
 RUN cp -v /linux-kernel/arch/x86_64/boot/bzImage /tmp/iso/boot/vmlinuz64
 
 # Download the rootfs, don't unpack it though:
-RUN curl -L -o /tcl_rootfs.gz $TCL_REPO_BASE/release/distribution_files/rootfs.gz
+RUN curl -L -o /tcl_rootfs64.gz $TCL_REPO_BASE/release/distribution_files/rootfs64.gz
 
 # Install the TCZ dependencies
 RUN for dep in $TCZ_DEPS; do \
@@ -132,6 +135,10 @@ RUN curl -L -o $ROOTFS/usr/local/bin/generate_cert https://github.com/SvenDowide
 # Build VBox guest additions
 # For future reference, we have to use x86 versions of several of these bits because TCL doesn't support ELFCLASS64
 # (... and we can't use VBoxControl or VBoxService at all because of this)
+#TEST removing the 32 bits version
+# REMINDER
+# mkdir x86 && tar -C x86 -xjf VBoxGuestAdditions-x86.tar.bz2 && \
+# cp x86/lib/VBoxGuestAdditions/mount.vboxsf $ROOTFS/sbin/
 ENV VBOX_VERSION 4.3.20
 RUN mkdir -p /vboxguest && \
     cd /vboxguest && \
@@ -142,14 +149,13 @@ RUN mkdir -p /vboxguest && \
     \
     sh VBoxLinuxAdditions.run --noexec --target . && \
     mkdir amd64 && tar -C amd64 -xjf VBoxGuestAdditions-amd64.tar.bz2 && \
-    mkdir x86 && tar -C x86 -xjf VBoxGuestAdditions-x86.tar.bz2 && \
     rm VBoxGuestAdditions*.tar.bz2 && \
     \
     KERN_DIR=/linux-kernel/ make -C amd64/src/vboxguest-${VBOX_VERSION} && \
     cp amd64/src/vboxguest-${VBOX_VERSION}/*.ko $ROOTFS/lib/modules/$KERNEL_VERSION-tinycore64/ && \
     \
     mkdir -p $ROOTFS/sbin && \
-    cp x86/lib/VBoxGuestAdditions/mount.vboxsf $ROOTFS/sbin/
+    cp amd64/lib/VBoxGuestAdditions/mount.vboxsf $ROOTFS/sbin/
 
 # Build VMware Tools
 ENV OVT_VERSION 9.4.6-1770165
@@ -184,21 +190,12 @@ RUN cd /vmtoolsd && \
         patch -p1 < /vmtoolsd/ovt-patches/$patch.patch; \
     done
 
-RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y libfuse2 libtool autoconf libglib2.0-dev libdumbnet-dev:i386 libdumbnet1:i386 libfuse2:i386 libfuse-dev libglib2.0-0:i386 libtirpc-dev libtirpc1:i386
-
-RUN ln -s /lib/i386-linux-gnu/libglib-2.0.so.0.3200.4 /lib/i386-linux-gnu/libglib-2.0.so &&\
-    ln -s /lib/i386-linux-gnu/libtirpc.so.1.0.10 /lib/i386-linux-gnu/libtirpc.so &&\
-    ln -s /usr/lib/i386-linux-gnu/libgthread-2.0.so.0 /usr/lib/i386-linux-gnu/libgthread-2.0.so &&\
-    ln -s /usr/lib/i386-linux-gnu/libgmodule-2.0.so.0 /usr/lib/i386-linux-gnu/libgmodule-2.0.so &&\
-    ln -s /usr/lib/i386-linux-gnu/libgobject-2.0.so.0 /usr/lib/i386-linux-gnu/libgobject-2.0.so &&\
-    ln -s /lib/i386-linux-gnu/libfuse.so.2 /lib/i386-linux-gnu/libfuse.so
+RUN apt-get install -y libfuse2 libtool autoconf libglib2.0-dev libdumbnet-dev libdumbnet1 libfuse2 libfuse-dev libglib2.0-0 libtirpc-dev libtirpc1
 
 # Compile
 RUN cd /vmtoolsd/open-vm-tools && \
     autoreconf -i && \
-    CC="gcc -m32" CXX="g++ -m32" ./configure --host=i486-pc-linux-gnu \
-                --build=i486-pc-linux-gnu \
-                --disable-multimon \
+    ./configure --disable-multimon \
                 --disable-docs \
                 --disable-tests \
                 --with-linuxdir=/linux-kernel \
@@ -210,9 +207,23 @@ RUN cd /vmtoolsd/open-vm-tools && \
                 --without-pam \
                 --without-x \
                 --without-icu && \
-    make CC="gcc -m32" CXX="g++ -m32" LIBS="-ltirpc" CFLAGS="-Wno-implicit-function-declaration" && \
+    make LIBS="-ltirpc" CFLAGS="-Wno-implicit-function-declaration" && \
     make DESTDIR=$ROOTFS install &&\
     libtool --finish /usr/local/lib
+
+# Kernel modules to build and install
+ENV VM_MODULES  vmhgfs
+
+RUN cd /vmtoolsd/open-vm-tools &&\
+    TOPDIR=$PWD &&\
+    for module in $VM_MODULES; do \
+        cd modules/linux/$module; \
+        make -C /linux-kernel modules M=$PWD VM_CCVER=$(gcc -dumpversion) HEADER_DIR="/linux-kernel/include" SRCROOT=$PWD OVT_SOURCE_DIR=$TOPDIR; \
+        cd -; \
+    done && \
+    for module in $VM_MODULES; do \
+        make -C /linux-kernel INSTALL_MOD_PATH=$ROOTFS modules_install M=$PWD/modules/linux/$module; \
+    done
 
 ENV LIBDNET libdnet-1.11
 
@@ -221,13 +232,14 @@ RUN cd /vmtoolsd &&\
     tar zxf ${LIBDNET}.tar.gz &&\
     rm ${LIBDNET}.tar.gz &&\
     cd ${LIBDNET} &&\
-    ./configure --build=i486-pc-linux-gnu &&\
-    make CC="gcc -m32" CXX="g++ -m32" &&\
+    ./configure &&\
+    make &&\
     make install &&\ 
-    make DESTDIR=$ROOTFS install &&\
-    libtool --finish /usr/local/lib
+    make DESTDIR=$ROOTFS install
 
-RUN cd $ROOTFS && cd usr/local/lib && ln -s libdnet.1 libdumbnet.so.1
+# Horrible hack again
+RUN cd $ROOTFS && cd usr/local/lib && ln -s libdnet.1 libdumbnet.so.1 &&\
+    cd $ROOTFS && ln -s lib lib64
 
 # Make sure that all the modules we might have added are recognized (especially VBox guest additions)
 RUN depmod -a -b $ROOTFS $KERNEL_VERSION-tinycore64
@@ -250,7 +262,7 @@ RUN cd /git && \
     echo "${GIT_BRANCH} : ${GITSHA1} - ${DATE}" > $ROOTFS/etc/boot2docker
 
 # Install Tiny Core Linux rootfs
-RUN cd $ROOTFS && zcat /tcl_rootfs.gz | cpio -f -i -H newc -d --no-absolute-filenames
+RUN cd $ROOTFS && zcat /tcl_rootfs64.gz | cpio -f -i -H newc -d --no-absolute-filenames
 
 # Copy our custom rootfs
 COPY rootfs/rootfs $ROOTFS
