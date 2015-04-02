@@ -170,25 +170,8 @@ RUN mkdir -p /vmtoolsd && \
 
 # Apply patches
 RUN cd /vmtoolsd && \
-    git clone https://github.com/frapposelli/open-vm-tools-dkms ovt-patches && \
-    curl -L -o ovt-patches/authposix_c.patch https://github.com/vmware/tcl-container/raw/master/patches/ovt/authposix_c.patch && \
-    curl -L -o ovt-patches/vmxrpc_h.patch https://github.com/vmware/tcl-container/raw/master/patches/ovt/vmxrpc_h.patch && \
-    for patch in authposix_c \
-                 vmxrpc_h; do \
-        cd /vmtoolsd/open-vm-tools; \ 
-        patch -p0 < /vmtoolsd/ovt-patches/$patch.patch; \
-        cd -; \
-    done && \
-    for patch in 0001-Remove-unused-DEPRECATED-macro \
-                 0002-Conditionally-define-g_info-macro \
-                 0003-Add-kuid_t-kgid_t-compatibility-layer \
-                 0004-Use-new-link-helpers \
-                 0005-Update-hgfs-file-operations-for-newer-kernels \
-                 0006-Fix-vmxnet-module-on-kernels-3.16 \
-                 0007-Fix-vmhgfs-module-on-kernels-3.16 \
-                 0008-Fix-segfault-in-vmhgfs; do \
-        patch -p1 < /vmtoolsd/ovt-patches/$patch.patch; \
-    done
+    curl -L -o open-vm-tools-3.x.x-patches.patch https://gist.github.com/frapposelli/5506651fa6f3d25d5760/raw/475f8fb2193549c10a477d506de40639b04fa2a7/open-vm-tools-3.x.x-patches.patch && \
+    patch -p1 < open-vm-tools-3.x.x-patches.patch && rm open-vm-tools-3.x.x-patches.patch
 
 RUN apt-get install -y libfuse2 libtool autoconf libglib2.0-dev libdumbnet-dev libdumbnet1 libfuse2 libfuse-dev libglib2.0-0 libtirpc-dev libtirpc1
 

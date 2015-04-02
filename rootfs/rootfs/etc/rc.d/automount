@@ -9,7 +9,7 @@ BOOT2DOCKER_DATA=`blkid -o device -l -t LABEL=$LABEL`
 echo $BOOT2DOCKER_DATA
 if [ ! -n "$BOOT2DOCKER_DATA" ]; then
     echo "Is the disk unpartitioned?, test for the 'boot2docker format-me' string"
-    
+
     # Is the disk unpartitioned?, test for the 'boot2docker format-me' string
     UNPARTITIONED_HD=`fdisk -l | grep "doesn't contain a valid partition table" | head -n 1 | sed 's/Disk \(.*\) doesn.*/\1/'`
 
@@ -35,16 +35,16 @@ if [ ! -n "$BOOT2DOCKER_DATA" ]; then
             swapon "${UNPARTITIONED_HD}2"
         fi
 
-        DISK_VENDOR=`cat /sys/class/block/$(basename $UNPARTITIONED_HD /dev/)/device/vendor /sys/class/block/$(basename $UNPARTITIONED_HD /dev/)/device/model | tr -d "\n"`
+        DISK_VENDOR=$(cat /sys/class/block/$(basename $UNPARTITIONED_HD /dev/)/device/vendor /sys/class/block/$(basename $UNPARTITIONED_HD /dev/)/device/model | tr -d "\n")
         # Test if disk is "VMware, VMware Virtual S" and empty.
-        if [ "$DISK_VENDOR" = "VMware, VMware Virtual S" ]; then
+        if [ "$DISK_VENDOR" = "VMware, VMware Virtual S" ] || [ "$DISK_VENDOR" = "VMware  Virtual disk    " ]; then
             # Check whether the disk has any known partitions on it
             blkid -o device $UNPARTITIONED_HD
             if [ $? == 2 ]; then
                 # As there are no partitions, let's make sure the disk is empty for real
                 dd if=$UNPARTITIONED_HD of=device_test_file bs=1k count=256 > /dev/null 2>&1
                 NON_NUL=$(<device_test_file tr -d '\0\n' | wc -c)
-                if [ $NON_NUL == 0 ]; then                    
+                if [ $NON_NUL == 0 ]; then
                     # Create the partition, format it and then mount it
                     echo "NEW VMware boot2docker managed disk image ($UNPARTITIONED_HD): formatting it for use"
                     echo "NEW VMware boot2docker managed disk image ($UNPARTITIONED_HD): formatting it for use" > /home/docker/log.log
@@ -114,7 +114,7 @@ if [ -n "$BOOT2DOCKER_DATA" ]; then
     if [ -e "/userdata.tar" ]; then
         mv /userdata.tar /var/lib/boot2docker/
     fi
-    
+
     ls -l /mnt/$PARTNAME
 fi
 # /etc dirs are initialised from /usr/local, to allow the user/admin to customise
