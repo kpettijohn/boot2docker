@@ -83,3 +83,18 @@ fi
 
 # Launch vmware-tools
 /etc/rc.d/vmtoolsd
+
+# Hack to make sure docker is running. 
+if /usr/local/etc/init.d/docker status |grep -q 'not running'; then
+  echo "Docker is running"
+else
+  echo "Docker failed to start"
+  # If we wait long enough docker will start successfully. Still not sure what we are waiting on...
+  sleep 10
+  /usr/local/etc/init.d/docker start
+  if /usr/local/etc/init.d/docker status |grep -q 'not running'; then
+    echo "Docker is running"
+  else
+    echo "Docker failed to start... again."
+  fi
+fi
